@@ -1,8 +1,15 @@
 #include "simple_compute.h"
 
+#include <chrono>
+#include <random>
+
 #include <vk_pipeline.h>
 #include <vk_buffers.h>
 #include <vk_utils.h>
+
+float SampleRandom(float scale = 1e6f) {
+  return (float(rand()) / float(RAND_MAX)) * scale;
+}
 
 SimpleCompute::SimpleCompute(uint32_t a_length) : m_length(a_length)
 {
@@ -97,11 +104,11 @@ void SimpleCompute::SetupSimplePipeline()
   // Заполнение буферов
   std::vector<float> values(m_length);
   for (uint32_t i = 0; i < values.size(); ++i) {
-    values[i] = (float)i;
+    values[i] = SampleRandom(1.0);
   }
   m_pCopyHelper->UpdateBuffer(m_A, 0, values.data(), sizeof(float) * values.size());
   for (uint32_t i = 0; i < values.size(); ++i) {
-    values[i] = (float)i * i;
+    values[i] = 0.0f;
   }
   m_pCopyHelper->UpdateBuffer(m_B, 0, values.data(), sizeof(float) * values.size());
 }
@@ -217,15 +224,45 @@ void SimpleCompute::Execute()
   fenceCreateInfo.flags = 0;
   VK_CHECK_RESULT(vkCreateFence(m_device, &fenceCreateInfo, NULL, &m_fence));
 
+  auto shader_start = std::chrono::high_resolution_clock::now();
   // Отправляем буфер команд на выполнение
   VK_CHECK_RESULT(vkQueueSubmit(m_computeQueue, 1, &submitInfo, m_fence));
 
   //Ждём конца выполнения команд
   VK_CHECK_RESULT(vkWaitForFences(m_device, 1, &m_fence, VK_TRUE, 100000000000));
 
-  std::vector<float> values(m_length);
-  m_pCopyHelper->ReadBuffer(m_sum, 0, values.data(), sizeof(float) * values.size());
-  for (auto v: values) {
-    std::cout << v << ' ';
+  std::vector<float> result(m_length);
+  m_pCopyHelper->ReadBuffer(m_sum, 0, result.data(), sizeof(float) * result.size());
+
+  float sum = 0.0;
+  for (auto v: result) {
+    sum += v;
   }
+  auto shader_finished = std::chrono::high_resolution_clock::now();
+  auto shader_time = std::chrono::duration_cast<std::chrono::milliseconds>(shader_finished - shader_start).count();
+  std::cout << "computation in shader took " << shader_time << " ms" << std::endl;
+
+  std::vector<float> values(m_length);
+  for (uint32_t i = 0; i < values.size(); ++i) {
+    values[i] = SampleRandom(1.0);
+  }
+
+  auto cpp_start = std::chrono::high_resolution_clock::now();
+  for (int i = 0;i < (int)m_length; ++i) {
+    float convolved = 0.0;
+    for (int j = -3; j < 4; ++j) {
+      if (i + j >= 0 && (i + j) < (int)m_length) {
+        convolved += values[i+j] / 7.0;
+      }
+    }
+    result[i] = values[i] - convolved;
+  }
+  sum = 0.0;
+  for (auto v: result) {
+    sum += v;
+  }
+  auto cpp_finished = std::chrono::high_resolution_clock::now();
+  auto cpp_time = std::chrono::duration_cast<std::chrono::milliseconds>(cpp_finished - cpp_start).count();
+  std::cout << "computation on cpu took " << cpp_time << " ms" << std::endl;
+
 }
