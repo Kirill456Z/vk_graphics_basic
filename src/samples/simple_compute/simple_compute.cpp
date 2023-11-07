@@ -77,7 +77,7 @@ void SimpleCompute::CreateDevice(uint32_t a_deviceId)
 }
 
 
-void SimpleCompute::SetupSimplePipeline()
+void SimpleCompute::SetupSimplePipeline(const std::vector<float>& values)
 {
   std::vector<std::pair<VkDescriptorType, uint32_t> > dtypes = {
       {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,             3}
@@ -102,14 +102,7 @@ void SimpleCompute::SetupSimplePipeline()
   m_pBindings->BindEnd(&m_sumDS, &m_sumDSLayout);
 
   // Заполнение буферов
-  std::vector<float> values(m_length);
-  for (uint32_t i = 0; i < values.size(); ++i) {
-    values[i] = SampleRandom(1.0);
-  }
   m_pCopyHelper->UpdateBuffer(m_A, 0, values.data(), sizeof(float) * values.size());
-  for (uint32_t i = 0; i < values.size(); ++i) {
-    values[i] = 0.0f;
-  }
   m_pCopyHelper->UpdateBuffer(m_B, 0, values.data(), sizeof(float) * values.size());
 }
 
@@ -209,7 +202,12 @@ void SimpleCompute::CreateComputePipeline()
 
 void SimpleCompute::Execute()
 {
-  SetupSimplePipeline();
+  std::vector<float> values(m_length);
+  for (uint32_t i = 0; i < values.size(); ++i) {
+    values[i] = SampleRandom(1.0);
+  }
+
+  SetupSimplePipeline(values);
   CreateComputePipeline();
 
   BuildCommandBufferSimple(m_cmdBufferCompute, nullptr);
@@ -240,12 +238,9 @@ void SimpleCompute::Execute()
   }
   auto shader_finished = std::chrono::high_resolution_clock::now();
   auto shader_time = std::chrono::duration_cast<std::chrono::milliseconds>(shader_finished - shader_start).count();
+  std::cout << "sum on gpu " << sum << std::endl;
   std::cout << "computation in shader took " << shader_time << " ms" << std::endl;
 
-  std::vector<float> values(m_length);
-  for (uint32_t i = 0; i < values.size(); ++i) {
-    values[i] = SampleRandom(1.0);
-  }
 
   auto cpp_start = std::chrono::high_resolution_clock::now();
   for (int i = 0;i < (int)m_length; ++i) {
@@ -263,6 +258,7 @@ void SimpleCompute::Execute()
   }
   auto cpp_finished = std::chrono::high_resolution_clock::now();
   auto cpp_time = std::chrono::duration_cast<std::chrono::milliseconds>(cpp_finished - cpp_start).count();
+  std::cout << "sum on cpu " << sum << std::endl;
   std::cout << "computation on cpu took " << cpp_time << " ms" << std::endl;
 
 }
