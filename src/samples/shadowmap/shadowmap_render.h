@@ -67,10 +67,12 @@ private:
   {
     float4x4 projView;
     float4x4 model;
+    float time;
   } pushConst2M;
 
   float4x4 m_worldViewProj;
   float4x4 m_lightMatrix;    
+  float time;
 
   UniformParams m_uniforms {};
   void* m_uboMappedMem = nullptr;
@@ -135,7 +137,7 @@ private:
 
   void BuildCommandBufferSimple(VkCommandBuffer a_cmdBuff, VkImage a_targetImage, VkImageView a_targetImageView);
 
-  void DrawSceneCmd(VkCommandBuffer a_cmdBuff, const float4x4& a_wvp, VkPipelineLayout a_pipelineLayout = VK_NULL_HANDLE);
+  void DrawSceneCmd(VkCommandBuffer a_cmdBuff, const float4x4& a_wvp, VkPipelineLayout a_pipelineLayout = VK_NULL_HANDLE, float time = 0.0);
 
   void loadShaders();
 
