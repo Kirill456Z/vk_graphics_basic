@@ -1,0 +1,154 @@
+#version 430
+
+#define wgSize 32
+#define PI 3.14f
+#define sigma 5.0f
+
+layout(local_size_x = wgSize, local_size_y = wgSize) in;
+
+const int size = 11;
+
+layout(rgba32f, binding = 0) uniform readonly image2D inputImage;
+layout(rgba32f, binding = 1) uniform writeonly image2D bluredImage;
+
+shared vec4 sharedMemory[wgSize + 2 * size][wgSize + 2 * size];
+
+float normalPDF[11];
+
+void calcNormalPDF() {
+    float sum = 0.0;
+    for (int i = 0; i <= 10; ++i) {
+        float arg = ((i - 5) / sigma);
+        normalPDF[i] = exp(-0.5 * arg * arg) / (sqrt(2 * PI) * sigma);
+        sum += normalPDF[i];
+    }
+    // without this image becomes much darker with large sigma
+    for (int i = 0; i <= 10; ++i) {
+        normalPDF[i] = normalPDF[i] /sum;
+    }
+}
+
+
+void fillSharedMemory(ivec2 localId, ivec2 globalId) {
+    sharedMemory[size + localId.y][size + localId.x] = imageLoad(inputImage, globalId);
+    //handle vertical copy
+    if (localId.y < size) {
+        if (globalId.y - size >= 0) {
+            sharedMemory[localId.y][size + localId.x] = imageLoad(inputImage, ivec2(globalId.x, globalId.y - size));
+        } else
+        {
+            sharedMemory[localId.y][size + localId.x] = vec4(0.0);
+        }
+    }
+    if (localId.y >= wgSize - size) {
+        if (globalId.y + size < imageSize(inputImage).y) {
+            sharedMemory[localId.y + 2 * size][size + localId.x] = imageLoad(inputImage, ivec2(globalId.x, globalId.y + size));
+        } else {
+            sharedMemory[localId.y + 2 * size][size + localId.x] = vec4(0.0);
+        }
+    }
+    //handle horizontal cpy
+    if (localId.x < size) {
+        if (globalId.x - size >= 0) {
+            sharedMemory[size + localId.y][localId.x] = imageLoad(inputImage, ivec2(globalId.x - size, globalId.y));
+        } else
+        {
+            sharedMemory[size + localId.y][localId.x] = vec4(0.0);
+        }
+    }
+    if (localId.x >= wgSize - size) {
+        if (globalId.x + size < imageSize(inputImage).x) {
+            sharedMemory[localId.y + size][2 * size + localId.x] = imageLoad(inputImage, ivec2(globalId.x + size, globalId.y));
+        } else {
+            sharedMemory[localId.y + size][2 * size + localId.x] = vec4(0.0);
+        }
+    }
+
+    // top left
+    if (localId.y < size && localId.x < size) {
+        if ((globalId.x - size >= 0) && (globalId.y - size >= 0)) {
+            sharedMemory[localId.y][localId.x] = imageLoad(inputImage, ivec2(globalId.x - size, globalId.y - size));
+        } else {
+            sharedMemory[localId.y][localId.x] = vec4(0.0);
+        }
+    }
+    //top right
+    if ((localId.y < size) && (localId.x >= wgSize - size)) {
+        if ((globalId.y - size >= 0) && (globalId.x + size < imageSize(inputImage).x)) {
+            sharedMemory[localId.y][2 * size + localId.x] = imageLoad(inputImage, ivec2(globalId.x + size, globalId.y - size));
+        } else
+        {
+            sharedMemory[localId.y][2 * size + localId.x] = vec4(0.0);
+        }
+    }
+    // bottom left
+    if ((localId.y >= wgSize - size) && (localId.x < size)) {
+        if ((globalId.x - size >= 0) && (globalId.y + size < imageSize(inputImage).y)) {
+            sharedMemory[localId.y  + 2 * size][localId.x] = imageLoad(inputImage, ivec2(globalId.x - size, globalId.y + size));
+        } else
+        {
+            sharedMemory[localId.y  + 2 * size][localId.x] = vec4(0.0);
+        }
+    }
+    //bottom right
+    if ((localId.y >= wgSize - size) && (localId.x >= wgSize - size)) {
+        if ((globalId.x + size < imageSize(inputImage).x) && (globalId.y + size < imageSize(inputImage).y)) {
+            sharedMemory[localId.y + 2 * size][localId.x + 2*size] = imageLoad(inputImage, ivec2(globalId.x + size, globalId.y + size));
+        } else
+        {
+            sharedMemory[localId.y + 2 * size][localId.x + 2*size] = vec4(0.0);
+        }
+    }
+}
+
+vec4 verticalBlur(ivec2 localId) {
+    vec4 result = vec4(0.0);
+    for (int i = 0;i <= 10; ++i) {
+        result += sharedMemory[localId.y + size + (i - 5)][localId.x + size] * normalPDF[i];
+    }
+    return result;
+}
+
+vec4 horizontalBlur(ivec2 localId) {
+    vec4 result = vec4(0.0);
+    for (int i = 0;i <= 10; ++i) {
+        result += sharedMemory[localId.y + size][localId.x + size + (i-5)] * normalPDF[i];
+    }
+    return result;
+}
+
+void main() 
+{
+    ivec2 globalId = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 localId = ivec2(gl_LocalInvocationID.xy);
+    fillSharedMemory(localId, globalId);
+    barrier();
+    // compute vertical blur
+    calcNormalPDF();
+    vec4 vertBlurred = verticalBlur(localId);
+    vec4 blurredLeft = vec4(0.0);
+    bool isCalculatedLeft = false;
+    vec4 blurredRight = vec4(0.0);
+    bool isCalculatedRight = false;
+    if (localId.x < size) {
+        blurredLeft = verticalBlur(ivec2(localId.x - size, localId.y));
+        isCalculatedLeft = true;
+    }
+    if (localId.x >= wgSize - size) {
+        blurredRight = verticalBlur(ivec2(localId.x + size, localId.y));
+        isCalculatedRight = true;
+    }
+    barrier();
+    // store vertical blur into shared memory
+    sharedMemory[localId.y + size][localId.x + size] = vertBlurred;
+    if (isCalculatedLeft) {
+        sharedMemory[localId.y + size][localId.x] = blurredLeft;
+    }
+    if (isCalculatedRight) {
+        sharedMemory[localId.y + size][localId.x + 2 * size] = blurredRight;
+    }
+    barrier();
+    //horizontal blur
+    vec4 blurred = horizontalBlur(localId);
+    imageStore(bluredImage, globalId, blurred);
+}

@@ -45,6 +45,8 @@ public:
 
 private:
   etna::GlobalContext* m_context;
+  etna::Image bluredImage;
+  etna::Image inputImage;
   etna::Image mainViewDepth;
   etna::Image shadowMap;
   etna::Sampler defaultSampler;
@@ -70,16 +72,17 @@ private:
   } pushConst2M;
 
   float4x4 m_worldViewProj;
-  float4x4 m_lightMatrix;    
+  float4x4 m_lightMatrix;
 
   UniformParams m_uniforms {};
   void* m_uboMappedMem = nullptr;
 
   etna::GraphicsPipeline m_basicForwardPipeline {};
   etna::GraphicsPipeline m_shadowPipeline {};
+  etna::ComputePipeline m_bluringPipeline{};
 
   std::shared_ptr<vk_utils::DescriptorMaker> m_pBindings = nullptr;
-  
+
   VkSurfaceKHR m_surface = VK_NULL_HANDLE;
   VulkanSwapChain m_swapchain;
 
@@ -88,6 +91,7 @@ private:
   uint32_t m_height = 1024u;
   uint32_t m_framesInFlight = 2u;
   bool m_vsync = false;
+  static const int m_blur_window = 11;
 
   vk::PhysicalDeviceFeatures m_enabledDeviceFeatures = {};
   std::vector<const char*> m_deviceExtensions;
@@ -95,7 +99,7 @@ private:
 
   std::shared_ptr<SceneManager>     m_pScnMgr;
   std::shared_ptr<IRenderGUI> m_pGUIRender;
-  
+
   std::shared_ptr<vk_utils::IQuad>               m_pFSQuad;
   VkDescriptorSet       m_quadDS; 
   VkDescriptorSetLayout m_quadDSLayout = nullptr;
@@ -110,12 +114,12 @@ private:
   */
   struct ShadowMapCam
   {
-    ShadowMapCam() 
-    {  
+    ShadowMapCam()
+    {
       cam.pos    = float3(4.0f, 4.0f, 4.0f);
       cam.lookAt = float3(0, 0, 0);
       cam.up     = float3(0, 1, 0);
-  
+
       radius          = 5.0f;
       lightTargetDist = 20.0f;
       usePerspectiveM = true;
@@ -125,9 +129,9 @@ private:
     float  lightTargetDist;  ///!< identify depth range
     Camera cam;              ///!< user control for light to later get light worldViewProj matrix
     bool   usePerspectiveM;  ///!< use perspective matrix if true and ortographics otherwise
-  
+
   } m_light;
- 
+
   void DrawFrameSimple(bool draw_gui);
 
   void CreateInstance();
