@@ -20,6 +20,7 @@ class SimpleRender : public IRender
 public:
   const std::string VERTEX_SHADER_PATH = "../resources/shaders/simple.vert";
   const std::string FRAGMENT_SHADER_PATH = "../resources/shaders/simple.frag";
+  const std::string FC_SHADER_PATH = "../resources/shaders/fc.comp";
 
   SimpleRender(uint32_t a_width, uint32_t a_height);
   ~SimpleRender()  { Cleanup(); };
@@ -98,11 +99,42 @@ protected:
   void* m_uboMappedMem = nullptr;
 
   pipeline_data_t m_basicForwardPipeline {};
+  std::shared_ptr<vk_utils::ICopyEngine> m_pCopyHelper;
 
   VkDescriptorSet m_dSet = VK_NULL_HANDLE;
   VkDescriptorSetLayout m_dSetLayout = VK_NULL_HANDLE;
   VkRenderPass m_screenRenderPass = VK_NULL_HANDLE; // main renderpass
 
+  VkBuffer m_instanseTransforms = VK_NULL_HANDLE;
+  VkDeviceMemory m_instanceTransformsAlloc = VK_NULL_HANDLE;
+  void *m_instanceTransformMappedMem = nullptr;
+
+  VkBuffer m_visibleInstancesCount = VK_NULL_HANDLE;
+  VkDeviceMemory m_visibleInstancesCountAlloc = VK_NULL_HANDLE;
+  void *m_visibleInstancesCountMappedMem = nullptr;
+
+  VkDrawIndexedIndirectCommand m_drawCmd;
+  VkBuffer m_drawCmdBuff = VK_NULL_HANDLE;
+  VkDeviceMemory m_drawCmdBuffAlloc = VK_NULL_HANDLE;
+  void *m_drawCmdBuffMappedMem = nullptr;
+
+  VkBuffer m_visibleInstanceIds = VK_NULL_HANDLE;
+  VkDeviceMemory m_visibleInstanceIdsAlloc = VK_NULL_HANDLE;
+
+
+  struct
+  {
+    mat4 viewProjMatr;
+    float4 bBoxMin;
+    float4 bBoxMax;
+    uint instancesTotal;
+  } frustrumPushConst;
+  pipeline_data_t m_frustumPipeline{};
+
+  VkDescriptorSet m_frustumDescriptorSet = VK_NULL_HANDLE;
+  VkDescriptorSetLayout m_frustumDSLayout = VK_NULL_HANDLE;
+
+  std::shared_ptr<vk_utils::DescriptorMaker> m_pFrustumBindings = nullptr;
   std::shared_ptr<vk_utils::DescriptorMaker> m_pBindings = nullptr;
 
   // *** presentation
@@ -142,12 +174,30 @@ protected:
                                 VkImageView a_targetImageView, VkPipeline a_pipeline);
 
   virtual void SetupSimplePipeline();
+  void SetupFrustumCullingPipeline();
   void CleanupPipelineAndSwapchain();
   void RecreateSwapChain();
 
   void CreateUniformBuffer();
   void UpdateUniformBuffer(float a_time);
 
+
+  void CleanupHelper(VkBuffer& obj)
+  {
+    if (obj != VK_NULL_HANDLE)
+    {
+        vkDestroyBuffer(m_device, obj, nullptr);
+        obj = VK_NULL_HANDLE;
+    }
+  }
+  void CleanupHelper(VkDeviceMemory& obj)
+  {
+    if (obj != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(m_device, obj, nullptr);
+        obj = VK_NULL_HANDLE;
+    }
+  }
   void Cleanup();
 
   void SetupDeviceFeatures();

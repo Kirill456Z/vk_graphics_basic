@@ -1,0 +1,66 @@
+#version 430
+
+layout( local_size_x = 16 ) in;
+
+struct VkDrawIndexedIndirectCommand {
+    uint    indexCount;
+    uint    instanceCount;
+    uint    firstIndex;
+    int     vertexOffset;
+    uint    firstInstance;
+};
+
+layout(push_constant) uniform params {
+    mat4 view_proj_matr;
+    vec4 bboxMin;
+    vec4 bboxMax;
+    uint instances_total;
+};
+
+layout(std430, binding = 0) buffer IndirectDrawBuffer {
+    VkDrawIndexedIndirectCommand draw_cmd;
+};
+
+layout(std430, binding = 1) readonly buffer InstanceTransforms {
+    mat4 instance_transforms[];
+};
+
+layout(std430, binding = 2) buffer VisibleInstances {
+    uint visible_instances[];
+};
+
+void main() {
+    if (gl_GlobalInvocationID.x == 0) {
+        draw_cmd.instanceCount = 0;
+    }
+
+    barrier();
+
+	if(gl_GlobalInvocationID.x < instances_total) {
+        mat4 model = view_proj_matr * instance_transforms[gl_GlobalInvocationID.x];
+        vec4 lims[8] = {
+            {bboxMin.x, bboxMin.y, bboxMin.z, 1.0}, 
+            {bboxMin.x, bboxMin.y, bboxMax.z, 1.0}, 
+            {bboxMin.x, bboxMax.y, bboxMin.z, 1.0}, 
+            {bboxMin.x, bboxMax.y, bboxMax.z, 1.0},
+            {bboxMax.x, bboxMin.y, bboxMin.z, 1.0}, 
+            {bboxMax.x, bboxMin.y, bboxMax.z, 1.0}, 
+            {bboxMax.x, bboxMax.y, bboxMin.z, 1.0}, 
+            {bboxMax.x, bboxMax.y, bboxMax.z, 1.0}, 
+        };
+
+        for (int corner_idx = 0; corner_idx < 8; corner_idx++) {
+            vec4 cur_lim = model * lims[corner_idx];
+            cur_lim = cur_lim / cur_lim.w;
+            if(
+                (-1 < cur_lim.x) && (cur_lim.x < 1) &&
+                (-1 < cur_lim.y) && (cur_lim.y < 1) &&
+                (0.0 < cur_lim.z) && (cur_lim.z < 1)
+            ) {
+                uint idx = atomicAdd(draw_cmd.instanceCount, 1);
+                visible_instances[idx] = gl_GlobalInvocationID.x;
+                return;
+            }
+        }
+	}
+}
