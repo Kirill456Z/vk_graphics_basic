@@ -1,6 +1,6 @@
 #version 430
 
-layout( local_size_x = 512 ) in;
+layout( local_size_x = 1024 ) in;
 
 layout( push_constant ) uniform params {
   uint len;
@@ -28,9 +28,9 @@ void main()
         float convolved = 0;
         for (int j = -3; j < 4; ++j) {
             if (idx + j >= 0 && (idx + j) < int(PushConstant.len)) {
-                convolved += A[idx + j] / 7.0f;
+                convolved += A[idx + j];
             }
         }
-        sum[idx] = A[idx] - convolved;
+        sum[idx] = A[idx] - convolved / 7.0f;
     }
 }
